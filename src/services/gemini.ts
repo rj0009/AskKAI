@@ -1,7 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 import { Source } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: (import.meta.env?.VITE_GEMINI_API_KEY || process.env?.GEMINI_API_KEY || "") });
+const getApiKey = () => {
+  let key = "";
+  try {
+    key = (import.meta.env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "");
+  } catch {
+    key = (import.meta.env?.VITE_GEMINI_API_KEY || "");
+  }
+  
+  if (!key) {
+    console.warn("Gemini API key is missing. Please ensure GEMINI_API_KEY or VITE_GEMINI_API_KEY is set.");
+  }
+  return key;
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export const searchJiraTool = {
   name: "searchJira",

@@ -162,7 +162,7 @@ export default function ChatInterface() {
         message = response.candidates[0].content;
       }
 
-      const aiContent = message.parts.map((p: any) => p.text).join('');
+      const aiContent = response.text || "I'm sorry, I couldn't generate a response.";
       
       const aiMessage: Message = {
         id: Date.now().toString(),
@@ -180,12 +180,22 @@ export default function ChatInterface() {
         { role: 'model', parts: message.parts }
       ];
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat Error:", error);
+      let errorMessage = "I encountered an error while processing your request. Please check your configuration in Settings.";
+      
+      if (error?.message?.includes("API key not valid")) {
+        errorMessage = "Invalid Gemini API Key. Please check your environment variables.";
+      } else if (error?.message?.includes("process is not defined")) {
+        errorMessage = "Internal configuration error (process is not defined). Please contact support.";
+      } else if (error?.response?.data?.message) {
+        errorMessage = `System Error: ${error.response.data.message}`;
+      }
+
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: "I encountered an error while processing your request. Please check your configuration in Settings.",
+        content: errorMessage,
         timestamp: new Date(),
       }]);
     } finally {
