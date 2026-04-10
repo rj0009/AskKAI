@@ -88,6 +88,38 @@ export const mockSources: Source[] = [
     url: 'https://jira.ncss.gov.sg/browse/PROJ-X-12',
     content: 'There are currently 2 unresolved Sev 1 defects related to data leakage in the reporting module. Assigned to Tech Lead for immediate action.',
     lastUpdated: '2026-04-09',
+  },
+  {
+    id: 'gitlab-sec-1',
+    type: 'GitLab',
+    title: 'Security Scan: Critical Vulnerabilities in epes-auth-service',
+    url: 'https://gitlab.ncss.gov.sg/epes/auth-service/-/security/vulnerabilities',
+    content: 'Critical: SQL Injection vulnerability detected in login endpoint. High: Outdated dependency (lodash < 4.17.21) with known prototype pollution. Medium: Missing security headers in nginx config.',
+    lastUpdated: '2026-04-10',
+  },
+  {
+    id: 'conf-outdated-1',
+    type: 'Confluence',
+    title: 'Notification Feature Specification (DRAFT)',
+    url: 'https://confluence.ncss.gov.sg/display/EPES/Notification+Spec',
+    content: 'This document describes the notification feature. Note: The architecture described here uses a legacy polling mechanism. The team has since moved to WebSockets, but this page has not been updated.',
+    lastUpdated: '2025-11-12',
+  },
+  {
+    id: 'jira-release-1',
+    type: 'Jira',
+    title: 'Release v2.3.1 - Deployment Checklist',
+    url: 'https://jira.ncss.gov.sg/browse/REL-231',
+    content: 'Tickets included: EPES-124, EPES-205. Status: All testing completed in UAT. Pending CAB approval.',
+    lastUpdated: '2026-04-09',
+  },
+  {
+    id: 'gitlab-mr-1',
+    type: 'GitLab',
+    title: 'MR !452: Implement WebSocket for Notifications',
+    url: 'https://gitlab.ncss.gov.sg/epes/frontend/-/merge_requests/452',
+    content: 'Merged by Tech Lead. Implements the new WebSocket-based notification system. Replaces the old polling logic.',
+    lastUpdated: '2026-04-08',
   }
 ];
 

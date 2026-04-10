@@ -51,9 +51,9 @@ export default function ChatInterface() {
   const chatHistoryRef = useRef<any[]>([]);
 
   const personas = [
-    { id: 'PM', name: 'Product Manager', icon: <User size={14} />, queries: ['What’s blocking Sprint 12?', 'Which dependencies are at risk?'] },
-    { id: 'IT', name: 'IT Officer', icon: <Search size={14} />, queries: ['Where is the latest system runbook?', 'What changed since last release?'] },
-    { id: 'Tech', name: 'Tech Lead', icon: <ShieldCheck size={14} />, queries: ['Any unresolved Sev 1–2 tickets?', 'Is the pipeline stable this week?'] },
+    { id: 'PM', name: 'Product Manager', icon: <User size={14} />, queries: ['What is the current design specification for the notification feature?', 'Summarize the current sprint velocity and identify any team capacity risks.'] },
+    { id: 'IT', name: 'IT Officer', icon: <Search size={14} />, queries: ['What are the critical security findings in the repository and what should we address first?', 'Where is the latest system runbook?'] },
+    { id: 'Tech', name: 'Tech Lead', icon: <ShieldCheck size={14} />, queries: ['Validate release for v2.3.1 deployment based on release notes, completed tickets and merged code.', 'Any unresolved Sev 1–2 tickets?'] },
   ];
 
   const scrollToBottom = () => {
@@ -81,28 +81,72 @@ export default function ChatInterface() {
     setTestingConnection(null);
   };
 
+  const handleReset = () => {
+    console.log('Resetting chat state');
+    setMessages([
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content: "Hello! I'm AskKAI, your AI Product Partner. How can I help you today? You can ask me about project risks, system architecture, or locate specific documentation across Jira, Confluence, GitLab, and SharePoint.",
+        timestamp: new Date(),
+      }
+    ]);
+    chatHistoryRef.current = [];
+    setIsLoading(false);
+    setActiveSources([]);
+  };
+
   const handleSend = async (customInput?: string) => {
     const textToSend = customInput || input;
-    if (!textToSend.trim() || isLoading) return;
+    console.log('handleSend called', { textToSend, isLoading });
+    if (!textToSend.trim()) {
+      console.log('handleSend: Empty input, returning');
+      return;
+    }
+    
+    if (isLoading) {
+      console.log('handleSend: Already loading, returning');
+      return;
+    }
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}`,
       role: 'user',
       content: textToSend,
       timestamp: new Date(),
     };
 
+    console.log('Adding user message to state', userMessage);
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
     try {
+      console.log('Starting agentic loop...');
       // Agentic Loop
-      let response = await generateResponse(textToSend, chatHistoryRef.current);
+      let currentContents = [
+        ...chatHistoryRef.current,
+        { role: 'user', parts: [{ text: textToSend }] }
+      ];
+      
+      console.log('Calling generateResponse with contents:', currentContents.length);
+      let response = await generateResponse(currentContents);
+      
+      if (!response || !response.candidates || response.candidates.length === 0) {
+        console.error('Invalid response structure:', response);
+        throw new Error("No response candidates received from Gemini API.");
+      }
+
       let message = response.candidates[0].content;
+      console.log('Initial model response:', message);
+      
+      let iterations = 0;
+      const MAX_ITERATIONS = 5;
 
       // Handle Tool Calls
-      while (message.parts.some((p: any) => p.functionCall)) {
+      while (message.parts && message.parts.some((p: any) => p.functionCall) && iterations < MAX_ITERATIONS) {
+        iterations++;
+        console.log(`Tool call iteration ${iterations}`);
         const toolCalls = message.parts.filter((p: any) => p.functionCall);
         const toolResponses = [];
 
@@ -112,20 +156,23 @@ export default function ChatInterface() {
           
           let result;
           try {
+            const axiosConfig = { timeout: 15000 }; // 15s timeout for proxy calls
             if (name === 'searchJira') {
-              const res = await axios.post('/api/proxy/jira', { query: args.query as string, config });
+              const res = await axios.post('/api/proxy/jira', { query: args.query as string, config }, axiosConfig);
               result = res.data;
             } else if (name === 'searchGitLab') {
-              const res = await axios.post('/api/proxy/gitlab', { query: args.query as string, config });
+              const res = await axios.post('/api/proxy/gitlab', { query: args.query as string, config }, axiosConfig);
               result = res.data;
             } else if (name === 'searchConfluence') {
-              const res = await axios.post('/api/proxy/confluence', { query: args.query as string, config });
+              const res = await axios.post('/api/proxy/confluence', { query: args.query as string, config }, axiosConfig);
               result = res.data;
             } else {
               // Fallback to mock for others or if not configured
+              console.log(`Using mock data for tool: ${name}`);
               result = searchSources(args.query as string).map(s => ({ ...s, isMock: true }));
             }
           } catch (err) {
+            console.warn(`Tool ${name} failed or timed out, using fallback.`, err);
             result = searchSources(args.query as string).map(s => ({ ...s, isMock: true }));
           }
 
@@ -138,50 +185,80 @@ export default function ChatInterface() {
 
           // Update active sources for UI
           if (Array.isArray(result)) {
-            setActiveSources(prev => [...prev, ...result.map((r: any) => ({
-              id: r.id || Math.random().toString(),
-              type: name.replace('search', '') as any,
-              title: r.title || r.key || r.name || 'Resource',
-              content: r.content || r.description || 'No content',
-              url: r.url || '#',
-              lastUpdated: r.lastUpdated || new Date().toISOString().split('T')[0],
-              isMock: r.isMock || false
-            }))]);
+            setActiveSources(prev => {
+              const newSources = result.map((r: any) => ({
+                id: r.id || `source-${Math.random().toString(36).substr(2, 9)}`,
+                type: (name.replace('search', '')) as any,
+                title: r.title || r.key || r.name || 'Resource',
+                content: r.content || r.description || 'No content',
+                url: r.url || '#',
+                lastUpdated: r.lastUpdated || new Date().toISOString().split('T')[0],
+                isMock: r.isMock || false
+              }));
+              const existingIds = new Set(prev.map(s => s.id));
+              return [...prev, ...newSources.filter(s => !existingIds.has(s.id))];
+            });
           }
         }
 
         // Send tool results back to Gemini
-        const nextResponse = await generateResponse(textToSend, [
-          ...chatHistoryRef.current,
-          { role: 'user', parts: [{ text: textToSend }] },
+        const toolMessage = { role: 'function', parts: toolResponses };
+        const nextContents = [
+          ...currentContents,
           message,
-          { role: 'function', parts: toolResponses }
-        ]);
+          toolMessage
+        ];
+        
+        console.log('Sending tool results back to Gemini...');
+        const nextResponse = await generateResponse(nextContents);
+        
+        if (!nextResponse || !nextResponse.candidates || nextResponse.candidates.length === 0) {
+          throw new Error("No response candidates received from Gemini API during tool loop.");
+        }
+
+        // Update history for next iteration
+        currentContents = [
+          ...currentContents,
+          message,
+          toolMessage
+        ];
         
         response = nextResponse;
         message = response.candidates[0].content;
+        console.log('Next model response after tool call:', message);
       }
 
-      const aiContent = response.text || "I'm sorry, I couldn't generate a response.";
+      console.log('Finalizing AI response...', { 
+        hasText: !!response.text, 
+        textLength: response.text?.length,
+        candidatesCount: response.candidates?.length 
+      });
+      
+      const aiContent = response.text || (response.candidates?.[0]?.content?.parts?.[0]?.text) || "I'm sorry, I couldn't generate a response.";
       
       const aiMessage: Message = {
-        id: Date.now().toString(),
+        id: `ai-${Date.now()}`,
         role: 'assistant',
         content: aiContent,
         timestamp: new Date(),
       };
 
+      console.log('Adding AI message to state');
       setMessages(prev => [...prev, aiMessage]);
       
-      // Update history
+      // Update history for next user message - include all intermediate steps
       chatHistoryRef.current = [
-        ...chatHistoryRef.current,
-        { role: 'user', parts: [{ text: textToSend }] },
-        { role: 'model', parts: message.parts }
+        ...currentContents,
+        { role: 'model', parts: message.parts || [] }
       ];
+      console.log('Chat history updated, turns:', chatHistoryRef.current.length);
 
     } catch (error: any) {
-      console.error("Chat Error:", error);
+      console.error("Chat Error Detail:", {
+        message: error?.message,
+        response: error?.response?.data,
+        stack: error?.stack
+      });
       let errorMessage = "I encountered an error while processing your request. Please check your configuration in Settings.";
       
       if (error?.message?.includes("API key not valid")) {
@@ -639,28 +716,28 @@ export default function ChatInterface() {
                 variant="outline" 
                 size="sm" 
                 className="h-7 text-[10px] rounded-full bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/40 text-primary font-bold"
-                onClick={() => handleSend("Generate a comprehensive Risk Report for the EPES project by cross-referencing Jira blockers and GitLab pipeline failures.")}
+                onClick={() => handleSend("Validate release for v2.3.1 deployment based on release notes, completed tickets and merged code.")}
               >
                 <ShieldAlert size={12} className="mr-1.5" />
-                Risk Report
+                Release Validation
               </Button>
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="h-7 text-[10px] rounded-full bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10 hover:border-yellow-500/40 text-yellow-700 font-bold"
-                onClick={() => handleSend("Summarize the current sprint velocity and identify any team capacity risks.")}
+                className="h-7 text-[10px] rounded-full bg-red-500/5 border-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 text-red-700 font-bold"
+                onClick={() => handleSend("What are the critical security findings in the repository and what should we address first?")}
               >
-                <Zap size={12} className="mr-1.5" />
-                Sprint Health
+                <ShieldCheck size={12} className="mr-1.5" />
+                Security Audit
               </Button>
               <Button 
                 variant="outline" 
                 size="sm" 
                 className="h-7 text-[10px] rounded-full bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40 text-blue-700 font-bold"
-                onClick={() => handleSend("Verify if the latest architecture design in Confluence is consistent with the GitLab implementation.")}
+                onClick={() => handleSend("What is the current design specification for the notification feature? Flag if documentation is outdated.")}
               >
                 <FileText size={12} className="mr-1.5" />
-                Compliance Audit
+                Doc Synthesis
               </Button>
             </div>
 
@@ -684,15 +761,39 @@ export default function ChatInterface() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder={activePersona ? `Ask as ${personas.find(p => p.id === activePersona)?.name}...` : "Ask KAI about products, delivery, or operations..."}
-                className="pr-12 h-12 bg-muted/20 border-muted-foreground/20 focus-visible:ring-primary rounded-xl transition-all"
+                className="pr-24 h-12 bg-muted/20 border-muted-foreground/20 focus-visible:ring-primary rounded-xl transition-all"
               />
+              <div className="absolute right-1.5 top-1.5 flex gap-1">
+                {isLoading && (
+                  <Button 
+                    size="icon" 
+                    variant="ghost"
+                    className="h-9 w-9 rounded-lg text-muted-foreground hover:text-destructive"
+                    onClick={() => setIsLoading(false)}
+                    title="Force stop"
+                  >
+                    <Zap size={18} />
+                  </Button>
+                )}
+                <Button 
+                  size="icon" 
+                  className="h-9 w-9 rounded-lg transition-all"
+                  disabled={!input.trim() || isLoading}
+                  onClick={() => handleSend()}
+                >
+                  <Send size={18} />
+                </Button>
+              </div>
+            </div>
+            <div className="flex justify-center">
               <Button 
-                size="icon" 
-                className="absolute right-1.5 top-1.5 h-9 w-9 rounded-lg transition-all"
-                disabled={!input.trim() || isLoading}
-                onClick={() => handleSend()}
+                variant="ghost" 
+                size="xs" 
+                className="text-[10px] text-muted-foreground hover:text-primary"
+                onClick={handleReset}
               >
-                <Send size={18} />
+                <History size={12} className="mr-1" />
+                Reset Conversation
               </Button>
             </div>
             <p className="text-[10px] text-center text-muted-foreground mt-3 opacity-60">
