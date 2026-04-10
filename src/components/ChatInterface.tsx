@@ -262,7 +262,7 @@ export default function ChatInterface() {
       let errorMessage = "I encountered an error while processing your request. Please check your configuration in Settings.";
       
       if (error?.message?.includes("API key not valid")) {
-        errorMessage = "Invalid Gemini API Key. Please check your environment variables.";
+        errorMessage = "Invalid Gemini API Key. If you are on Vercel, ensure GEMINI_API_KEY is set in your Environment Variables and you have redeployed.";
       } else if (error?.message?.includes("process is not defined")) {
         errorMessage = "Internal configuration error (process is not defined). Please contact support.";
       } else if (error?.response?.data?.message) {

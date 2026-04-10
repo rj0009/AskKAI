@@ -2,13 +2,31 @@ import { GoogleGenAI } from "@google/genai";
 import { Source } from "../types";
 
 const getApiKey = () => {
-  // Per SKILL.md guidelines for React (Vite):
-  // Use process.env.GEMINI_API_KEY directly.
-  // We add a fallback to VITE_GEMINI_API_KEY just in case.
-  const key = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+  let key = "";
+  
+  try {
+    // 1. Try process.env.GEMINI_API_KEY (Vite define or actual process.env)
+    // We check for "undefined" string which can happen with some build tools
+    const envKey = process.env.GEMINI_API_KEY;
+    if (envKey && envKey !== "undefined" && envKey !== "null") {
+      key = envKey;
+    }
+  } catch (e) {
+    // process might not be defined in browser if define failed
+  }
+
+  // 2. Fallback to import.meta.env.VITE_GEMINI_API_KEY
+  if (!key) {
+    try {
+      const viteKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      if (viteKey && viteKey !== "undefined" && viteKey !== "null") {
+        key = viteKey;
+      }
+    } catch (e) {}
+  }
   
   if (!key) {
-    console.warn("Gemini API key is missing. Checked process.env.GEMINI_API_KEY and VITE_GEMINI_API_KEY.");
+    console.warn("Gemini API key is missing. Please ensure GEMINI_API_KEY is set in your environment variables.");
   }
   return key;
 };
