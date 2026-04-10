@@ -68,17 +68,26 @@ export default function ChatInterface() {
     setTestingConnection(system);
     setTestResults(prev => ({ ...prev, [system]: null }));
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const isConfigured = 
-      (system === 'jira' && config.jiraToken) ||
-      (system === 'confluence' && config.confluenceToken) ||
-      (system === 'gitlab' && config.gitlabToken) ||
-      (system === 'sharepoint' && config.sharepointToken);
-
-    setTestResults(prev => ({ ...prev, [system]: isConfigured ? 'success' : 'error' }));
-    setTestingConnection(null);
+    try {
+      let endpoint = '';
+      if (system === 'jira') endpoint = '/api/proxy/jira';
+      else if (system === 'gitlab') endpoint = '/api/proxy/gitlab';
+      else if (system === 'confluence') endpoint = '/api/proxy/confluence';
+      
+      if (endpoint) {
+        // Send empty query to trigger a connectivity test
+        await axios.post(endpoint, { query: '', config });
+        setTestResults(prev => ({ ...prev, [system]: 'success' }));
+      } else if (system === 'sharepoint') {
+        // SharePoint doesn't have a proxy yet, simulate success if token exists
+        setTestResults(prev => ({ ...prev, [system]: config.sharepointToken ? 'success' : 'error' }));
+      }
+    } catch (err: any) {
+      console.error(`Connection test failed for ${system}:`, err.response?.data || err.message);
+      setTestResults(prev => ({ ...prev, [system]: 'error' }));
+    } finally {
+      setTestingConnection(null);
+    }
   };
 
   const handleReset = () => {
@@ -97,9 +106,10 @@ export default function ChatInterface() {
   };
 
   const handleSend = async (customInput?: string) => {
-    const textToSend = customInput || input;
+    const textToSend = (customInput || input || '').trim();
     console.log('handleSend called', { textToSend, isLoading });
-    if (!textToSend.trim()) {
+    
+    if (!textToSend) {
       console.log('handleSend: Empty input, returning');
       return;
     }
@@ -109,6 +119,8 @@ export default function ChatInterface() {
       return;
     }
 
+    setIsLoading(true);
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -117,17 +129,19 @@ export default function ChatInterface() {
     };
 
     console.log('Adding user message to state', userMessage);
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...(Array.isArray(prev) ? prev : []), userMessage]);
     setInput('');
-    setIsLoading(true);
 
     try {
       console.log('Starting agentic loop...');
       // Agentic Loop
+      const history = Array.isArray(chatHistoryRef.current) ? chatHistoryRef.current : [];
       let currentContents = [
-        ...chatHistoryRef.current,
+        ...history,
         { role: 'user', parts: [{ text: textToSend }] }
       ];
+      
+      const turnSources: Source[] = [];
       
       console.log('Calling generateResponse with contents:', currentContents.length);
       let response = await generateResponse(currentContents);
@@ -138,6 +152,9 @@ export default function ChatInterface() {
       }
 
       let message = response.candidates[0].content;
+      if (!message) {
+        throw new Error("Response candidate has no content.");
+      }
       console.log('Initial model response:', message);
       
       let iterations = 0;
@@ -157,18 +174,21 @@ export default function ChatInterface() {
           let result;
           try {
             const axiosConfig = { timeout: 15000 }; // 15s timeout for proxy calls
-            if (name === 'searchJira') {
+            const systemName = name.replace('search', '').toLowerCase();
+            const hasFailedBefore = (testResults as any)[systemName] === 'error';
+
+            if (name === 'searchJira' && !hasFailedBefore) {
               const res = await axios.post('/api/proxy/jira', { query: args.query as string, config }, axiosConfig);
               result = res.data;
-            } else if (name === 'searchGitLab') {
+            } else if (name === 'searchGitLab' && !hasFailedBefore) {
               const res = await axios.post('/api/proxy/gitlab', { query: args.query as string, config }, axiosConfig);
               result = res.data;
-            } else if (name === 'searchConfluence') {
+            } else if (name === 'searchConfluence' && !hasFailedBefore) {
               const res = await axios.post('/api/proxy/confluence', { query: args.query as string, config }, axiosConfig);
               result = res.data;
             } else {
-              // Fallback to mock for others or if not configured
-              console.log(`Using mock data for tool: ${name}`);
+              // Fallback to mock for others, if not configured, or if connection test failed
+              console.log(`Using mock data for tool: ${name} (Reason: ${hasFailedBefore ? 'Previous connection failure' : 'Not configured'})`);
               result = searchSources(args.query as string).map(s => ({ ...s, isMock: true }));
             }
           } catch (err) {
@@ -179,22 +199,28 @@ export default function ChatInterface() {
           toolResponses.push({
             functionResponse: {
               name,
-              response: { result }
+              response: { 
+                result,
+                isMock: result.length > 0 && result[0].isMock
+              }
             }
           });
 
           // Update active sources for UI
           if (Array.isArray(result)) {
+            const newSources = result.map((r: any) => ({
+              id: r.id || `source-${Math.random().toString(36).substr(2, 9)}`,
+              type: (name.replace('search', '')) as any,
+              title: r.title || r.key || r.name || 'Resource',
+              content: r.content || r.description || 'No content',
+              url: r.url || '#',
+              lastUpdated: r.lastUpdated || new Date().toISOString().split('T')[0],
+              isMock: r.isMock || false
+            }));
+            
+            turnSources.push(...newSources);
+            
             setActiveSources(prev => {
-              const newSources = result.map((r: any) => ({
-                id: r.id || `source-${Math.random().toString(36).substr(2, 9)}`,
-                type: (name.replace('search', '')) as any,
-                title: r.title || r.key || r.name || 'Resource',
-                content: r.content || r.description || 'No content',
-                url: r.url || '#',
-                lastUpdated: r.lastUpdated || new Date().toISOString().split('T')[0],
-                isMock: r.isMock || false
-              }));
               const existingIds = new Set(prev.map(s => s.id));
               return [...prev, ...newSources.filter(s => !existingIds.has(s.id))];
             });
@@ -240,6 +266,7 @@ export default function ChatInterface() {
         id: `ai-${Date.now()}`,
         role: 'assistant',
         content: aiContent,
+        sources: turnSources,
         timestamp: new Date(),
       };
 
@@ -361,40 +388,42 @@ export default function ChatInterface() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.jiraToken ? "bg-green-500 animate-pulse" : "bg-muted")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full", config.jiraToken && testResults.jira !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
                   <span className="text-[10px] font-medium">Jira Cloud</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.jiraToken ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] text-muted-foreground">{config.jiraToken && testResults.jira !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
               <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.confluenceToken ? "bg-green-500 animate-pulse" : "bg-muted")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full", config.confluenceToken && testResults.confluence !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
                   <span className="text-[10px] font-medium">Confluence</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.confluenceToken ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] text-muted-foreground">{config.confluenceToken && testResults.confluence !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
               <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.sharepointToken ? "bg-green-500 animate-pulse" : "bg-muted")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full", config.sharepointToken && testResults.sharepoint !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
                   <span className="text-[10px] font-medium">SharePoint</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.sharepointToken ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] text-muted-foreground">{config.sharepointToken && testResults.sharepoint !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
               <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.gitlabToken ? "bg-green-500 animate-pulse" : "bg-muted")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full", config.gitlabToken && testResults.gitlab !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
                   <span className="text-[10px] font-medium">GitLab</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.gitlabToken ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] text-muted-foreground">{config.gitlabToken && testResults.gitlab !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
             </div>
           </div>
 
           <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-            <DialogTrigger render={<Button variant="outline" className="w-full justify-start gap-2 text-sm font-bold" />}>
-              <Settings size={16} className="text-primary" />
-              Configuration
-            </DialogTrigger>
+            <DialogTrigger render={
+              <Button variant="outline" className="w-full justify-start gap-2 text-sm font-bold">
+                <Settings size={16} className="text-primary" />
+                Configuration
+              </Button>
+            } />
             <DialogContent className="sm:max-w-[500px] h-[85vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl">
               <DialogHeader className="p-6 pb-4 flex-none border-b bg-background">
                 <DialogTitle className="text-xl">System Connections</DialogTitle>
@@ -525,6 +554,7 @@ export default function ChatInterface() {
                         onChange={e => setConfig({...config, gitlabToken: e.target.value})}
                         className="h-9 text-xs"
                       />
+                      <p className="text-[9px] text-muted-foreground px-1">Requires 'read_api' or 'api' scope.</p>
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -660,11 +690,17 @@ export default function ChatInterface() {
                           <Badge 
                             key={source.id} 
                             variant="outline" 
-                            className="bg-muted/50 hover:bg-muted cursor-pointer transition-colors text-[10px] py-0 h-5 flex items-center gap-1"
-                            onClick={() => window.open(source.url, '_blank')}
+                            className={cn(
+                              "transition-colors text-[10px] py-0 h-5 flex items-center gap-1",
+                              source.isMock 
+                                ? "bg-orange-500/10 text-orange-600 border-orange-200 hover:bg-orange-500/20" 
+                                : "bg-muted/50 hover:bg-muted cursor-pointer"
+                            )}
+                            onClick={() => !source.isMock && window.open(source.url, '_blank')}
                           >
                             <FileText size={10} />
                             {source.title.split(':')[0]}
+                            {source.isMock && <span className="ml-1 opacity-60 font-bold text-[8px] uppercase">Mock</span>}
                           </Badge>
                         ))}
                       </div>
@@ -708,33 +744,45 @@ export default function ChatInterface() {
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="p-6 bg-background border-t">
+        <div className="p-6 bg-background border-t flex-none relative z-10">
           <div className="max-w-3xl mx-auto space-y-4">
             {/* Intelligence Actions */}
             <div className="flex flex-wrap gap-2 justify-center mb-2">
               <Button 
+                type="button"
                 variant="outline" 
                 size="sm" 
                 className="h-7 text-[10px] rounded-full bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/40 text-primary font-bold"
-                onClick={() => handleSend("Validate release for v2.3.1 deployment based on release notes, completed tickets and merged code.")}
+                onClick={() => {
+                  console.log('Intelligence Action: Release Validation');
+                  handleSend("Validate release for v2.3.1 deployment based on release notes, completed tickets and merged code.");
+                }}
               >
                 <ShieldAlert size={12} className="mr-1.5" />
                 Release Validation
               </Button>
               <Button 
+                type="button"
                 variant="outline" 
                 size="sm" 
                 className="h-7 text-[10px] rounded-full bg-red-500/5 border-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 text-red-700 font-bold"
-                onClick={() => handleSend("What are the critical security findings in the repository and what should we address first?")}
+                onClick={() => {
+                  console.log('Intelligence Action: Security Audit');
+                  handleSend("What are the critical security findings in the repository and what should we address first?");
+                }}
               >
                 <ShieldCheck size={12} className="mr-1.5" />
                 Security Audit
               </Button>
               <Button 
+                type="button"
                 variant="outline" 
                 size="sm" 
                 className="h-7 text-[10px] rounded-full bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40 text-blue-700 font-bold"
-                onClick={() => handleSend("What is the current design specification for the notification feature? Flag if documentation is outdated.")}
+                onClick={() => {
+                  console.log('Intelligence Action: Doc Synthesis');
+                  handleSend("What is the current design specification for the notification feature? Flag if documentation is outdated.");
+                }}
               >
                 <FileText size={12} className="mr-1.5" />
                 Doc Synthesis
@@ -746,43 +794,67 @@ export default function ChatInterface() {
               {(activePersona ? personas.find(p => p.id === activePersona)?.queries : personas.flatMap(p => p.queries).slice(0, 3)).map((q, i) => (
                 <Button 
                   key={i} 
+                  type="button"
                   variant="outline" 
                   className="h-7 text-[10px] rounded-full bg-muted/30 border-muted-foreground/10 hover:bg-primary/5 hover:border-primary/30 transition-all"
-                  onClick={() => handleSend(q)}
+                  onClick={() => {
+                    console.log('Canned Message Clicked:', q);
+                    handleSend(q);
+                  }}
                 >
                   {q}
                 </Button>
               ))}
             </div>
 
-            <div className="relative group">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder={activePersona ? `Ask as ${personas.find(p => p.id === activePersona)?.name}...` : "Ask KAI about products, delivery, or operations..."}
-                className="pr-24 h-12 bg-muted/20 border-muted-foreground/20 focus-visible:ring-primary rounded-xl transition-all"
-              />
-              <div className="absolute right-1.5 top-1.5 flex gap-1">
-                {isLoading && (
-                  <Button 
-                    size="icon" 
-                    variant="ghost"
-                    className="h-9 w-9 rounded-lg text-muted-foreground hover:text-destructive"
-                    onClick={() => setIsLoading(false)}
-                    title="Force stop"
+            <div className="relative flex gap-2 items-end">
+              <div className="relative flex-1">
+                <input
+                  value={input}
+                  onChange={(e) => {
+                    console.log('Input changed:', e.target.value);
+                    setInput(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      console.log('Enter key pressed');
+                      handleSend();
+                    }
+                  }}
+                  placeholder={activePersona ? `Ask as ${personas.find(p => p.id === activePersona)?.name || 'Partner'}...` : "Ask KAI about products, delivery, or operations..."}
+                  className="w-full pr-12 h-12 bg-muted/20 border border-muted-foreground/20 focus:border-primary focus:ring-1 focus:ring-primary outline-none rounded-xl px-4 transition-all text-sm"
+                />
+                <div className="absolute right-1.5 top-1.5 flex gap-1 z-20">
+                  {isLoading && (
+                    <button 
+                      type="button"
+                      className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log('Force stopping KAI');
+                        setIsLoading(false);
+                      }}
+                      title="Force stop"
+                    >
+                      <Zap size={18} />
+                    </button>
+                  )}
+                  <button 
+                    type="button"
+                    className={cn(
+                      "h-9 w-9 flex items-center justify-center rounded-lg transition-all",
+                      (!input.trim() || isLoading) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-primary text-primary-foreground hover:opacity-90 active:scale-95"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('Send button clicked manually');
+                      handleSend();
+                    }}
                   >
-                    <Zap size={18} />
-                  </Button>
-                )}
-                <Button 
-                  size="icon" 
-                  className="h-9 w-9 rounded-lg transition-all"
-                  disabled={!input.trim() || isLoading}
-                  onClick={() => handleSend()}
-                >
-                  <Send size={18} />
-                </Button>
+                    <Send size={18} />
+                  </button>
+                </div>
               </div>
             </div>
             <div className="flex justify-center">
