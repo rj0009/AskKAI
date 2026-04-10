@@ -308,13 +308,14 @@ export default function ChatInterface() {
               <Settings size={16} className="text-primary" />
               Configuration
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col p-0 overflow-hidden">
-              <DialogHeader className="p-6 pb-2 flex-none">
-                <DialogTitle>System Connections</DialogTitle>
+            <DialogContent className="sm:max-w-[500px] h-[85vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl">
+              <DialogHeader className="p-6 pb-4 flex-none border-b bg-background">
+                <DialogTitle className="text-xl">System Connections</DialogTitle>
                 <DialogDescription>Configure real-time integration with your delivery systems.</DialogDescription>
               </DialogHeader>
-              <ScrollArea className="flex-1 min-h-0">
-                <div className="px-6 py-4 space-y-6 pb-8">
+              
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                <div className="px-6 py-6 space-y-8 pb-12">
                   {/* Jira */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -489,9 +490,10 @@ export default function ChatInterface() {
                     </div>
                   </div>
                 </div>
-              </ScrollArea>
-              <DialogFooter className="p-6 border-t bg-muted/20 flex-none">
-                <Button onClick={() => setIsSettingsOpen(false)} className="w-full">Save and Sync All Systems</Button>
+              </div>
+
+              <DialogFooter className="p-4 border-t bg-muted/30 flex-none m-0 rounded-none">
+                <Button onClick={() => setIsSettingsOpen(false)} className="w-full h-10 shadow-sm">Save and Sync All Systems</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
