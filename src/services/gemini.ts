@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 import { Source } from "../types";
 
 const getApiKey = () => {
@@ -6,14 +6,11 @@ const getApiKey = () => {
   
   try {
     // 1. Try process.env.GEMINI_API_KEY (Vite define or actual process.env)
-    // We check for "undefined" string which can happen with some build tools
     const envKey = process.env.GEMINI_API_KEY;
     if (envKey && envKey !== "undefined" && envKey !== "null") {
       key = envKey;
     }
-  } catch (e) {
-    // process might not be defined in browser if define failed
-  }
+  } catch (e) {}
 
   // 2. Fallback to import.meta.env.VITE_GEMINI_API_KEY
   if (!key) {
@@ -25,55 +22,52 @@ const getApiKey = () => {
     } catch (e) {}
   }
   
-  if (!key) {
-    console.warn("Gemini API key is missing. Please ensure GEMINI_API_KEY is set in your environment variables.");
-  }
   return key;
 };
 
-export const searchJiraTool = {
+export const searchJiraTool: FunctionDeclaration = {
   name: "searchJira",
   description: "Search for issues, tasks, and sprint status in Jira.",
   parameters: {
-    type: "OBJECT",
+    type: Type.OBJECT,
     properties: {
-      query: { type: "STRING", description: "The search query or JQL-like text." }
+      query: { type: Type.STRING, description: "The search query or JQL-like text." }
     },
     required: ["query"]
   }
 };
 
-export const searchConfluenceTool = {
+export const searchConfluenceTool: FunctionDeclaration = {
   name: "searchConfluence",
   description: "Search for documentation, SOPs, and architecture designs in Confluence.",
   parameters: {
-    type: "OBJECT",
+    type: Type.OBJECT,
     properties: {
-      query: { type: "STRING", description: "The search query." }
+      query: { type: Type.STRING, description: "The search query." }
     },
     required: ["query"]
   }
 };
 
-export const searchGitLabTool = {
+export const searchGitLabTool: FunctionDeclaration = {
   name: "searchGitLab",
   description: "Search for projects, code, and pipeline status in GitLab.",
   parameters: {
-    type: "OBJECT",
+    type: Type.OBJECT,
     properties: {
-      query: { type: "STRING", description: "The search query." }
+      query: { type: Type.STRING, description: "The search query." }
     },
     required: ["query"]
   }
 };
 
-export const searchSharePointTool = {
+export const searchSharePointTool: FunctionDeclaration = {
   name: "searchSharePoint",
   description: "Search for files and legacy artifacts in SharePoint.",
   parameters: {
-    type: "OBJECT",
+    type: Type.OBJECT,
     properties: {
-      query: { type: "STRING", description: "The search query." }
+      query: { type: Type.STRING, description: "The search query." }
     },
     required: ["query"]
   }
@@ -124,10 +118,10 @@ export const generateResponse = async (contents: any[]) => {
         systemInstruction,
         tools: [{ 
           functionDeclarations: [
-            searchJiraTool as any, 
-            searchConfluenceTool as any, 
-            searchGitLabTool as any, 
-            searchSharePointTool as any
+            searchJiraTool, 
+            searchConfluenceTool, 
+            searchGitLabTool, 
+            searchSharePointTool
           ] 
         }]
       },
@@ -139,7 +133,10 @@ export const generateResponse = async (contents: any[]) => {
     if (!response || !response.candidates || response.candidates.length === 0) {
       console.error('Gemini API returned no candidates:', response);
     } else {
-      console.log('Gemini API response received successfully');
+      console.log('Gemini API response received successfully', {
+        text: response.text?.substring(0, 50),
+        functionCalls: response.functionCalls?.length
+      });
     }
 
     return response;

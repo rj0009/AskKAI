@@ -35,6 +35,7 @@ export default function ChatInterface() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [testingConnection, setTestingConnection] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, 'success' | 'error' | null>>({});
+  const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [config, setConfig] = useState({
     jiraBaseUrl: '',
     jiraEmail: '',
@@ -49,6 +50,7 @@ export default function ChatInterface() {
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatHistoryRef = useRef<any[]>([]);
+  const currentTurnRef = useRef<number>(0);
 
   const personas = [
     { id: 'PM', name: 'Product Manager', icon: <User size={14} />, queries: ['What is the current design specification for the notification feature?', 'Summarize the current sprint velocity and identify any team capacity risks.'] },
@@ -92,6 +94,7 @@ export default function ChatInterface() {
 
   const handleReset = () => {
     console.log('Resetting chat state');
+    currentTurnRef.current++; // Cancel any ongoing turn
     setMessages([
       {
         id: 'welcome',
@@ -119,7 +122,9 @@ export default function ChatInterface() {
       return;
     }
 
+    const turnId = ++currentTurnRef.current;
     setIsLoading(true);
+    setLoadingStatus('Thinking...');
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -132,8 +137,16 @@ export default function ChatInterface() {
     setMessages(prev => [...(Array.isArray(prev) ? prev : []), userMessage]);
     setInput('');
 
+    const checkCancellation = () => {
+      if (currentTurnRef.current !== turnId) {
+        console.log(`Turn ${turnId} cancelled (current turn is ${currentTurnRef.current})`);
+        return true;
+      }
+      return false;
+    };
+
     try {
-      console.log('Starting agentic loop...');
+      console.log(`Starting agentic loop for turn ${turnId}...`);
       // Agentic Loop
       const history = Array.isArray(chatHistoryRef.current) ? chatHistoryRef.current : [];
       let currentContents = [
@@ -144,69 +157,69 @@ export default function ChatInterface() {
       const turnSources: Source[] = [];
       
       console.log('Calling generateResponse with contents:', currentContents.length);
+      setLoadingStatus('Consulting Gemini...');
       let response = await generateResponse(currentContents);
       
+      if (checkCancellation()) return;
+
       if (!response || !response.candidates || response.candidates.length === 0) {
         console.error('Invalid response structure:', response);
-        throw new Error("No response candidates received from Gemini API.");
+        throw new Error("No response candidates received from Gemini API. Please check your API key.");
       }
 
-      let message = response.candidates[0].content;
-      if (!message) {
-        throw new Error("Response candidate has no content.");
-      }
-      console.log('Initial model response:', message);
-      
       let iterations = 0;
       const MAX_ITERATIONS = 5;
 
       // Handle Tool Calls
-      while (message.parts && message.parts.some((p: any) => p.functionCall) && iterations < MAX_ITERATIONS) {
+      while (response.functionCalls && response.functionCalls.length > 0 && iterations < MAX_ITERATIONS) {
         iterations++;
-        console.log(`Tool call iteration ${iterations}`);
-        const toolCalls = message.parts.filter((p: any) => p.functionCall);
+        console.log(`Tool call iteration ${iterations}`, response.functionCalls);
+        
         const toolResponses = [];
 
-        for (const call of toolCalls) {
-          const { name, args } = call.functionCall;
+        for (const call of response.functionCalls) {
+          const { name, args, id } = call;
+          const systemName = name.replace('search', '');
+          setLoadingStatus(`Searching ${systemName}...`);
           console.log(`Executing tool: ${name}`, args);
           
           let result;
           try {
-            const axiosConfig = { timeout: 15000 }; // 15s timeout for proxy calls
+            const axiosConfig = { timeout: 15000 };
             const systemName = name.replace('search', '').toLowerCase();
             const hasFailedBefore = (testResults as any)[systemName] === 'error';
 
             if (name === 'searchJira' && !hasFailedBefore) {
-              const res = await axios.post('/api/proxy/jira', { query: args.query as string, config }, axiosConfig);
+              const res = await axios.post('/api/proxy/jira', { query: args.query, config }, axiosConfig);
               result = res.data;
             } else if (name === 'searchGitLab' && !hasFailedBefore) {
-              const res = await axios.post('/api/proxy/gitlab', { query: args.query as string, config }, axiosConfig);
+              const res = await axios.post('/api/proxy/gitlab', { query: args.query, config }, axiosConfig);
               result = res.data;
             } else if (name === 'searchConfluence' && !hasFailedBefore) {
-              const res = await axios.post('/api/proxy/confluence', { query: args.query as string, config }, axiosConfig);
+              const res = await axios.post('/api/proxy/confluence', { query: args.query, config }, axiosConfig);
               result = res.data;
             } else {
-              // Fallback to mock for others, if not configured, or if connection test failed
-              console.log(`Using mock data for tool: ${name} (Reason: ${hasFailedBefore ? 'Previous connection failure' : 'Not configured'})`);
-              result = searchSources(args.query as string).map(s => ({ ...s, isMock: true }));
+              console.log(`Using mock data for tool: ${name}`);
+              result = searchSources(args.query).map(s => ({ ...s, isMock: true }));
             }
           } catch (err) {
-            console.warn(`Tool ${name} failed or timed out, using fallback.`, err);
-            result = searchSources(args.query as string).map(s => ({ ...s, isMock: true }));
+            console.warn(`Tool ${name} failed, using fallback.`, err);
+            result = searchSources(args.query).map(s => ({ ...s, isMock: true }));
           }
+
+          if (checkCancellation()) return;
 
           toolResponses.push({
             functionResponse: {
               name,
               response: { 
                 result,
-                isMock: result.length > 0 && result[0].isMock
-              }
+                isMock: Array.isArray(result) && result.length > 0 && result[0].isMock
+              },
+              id
             }
           });
 
-          // Update active sources for UI
           if (Array.isArray(result)) {
             const newSources = result.map((r: any) => ({
               id: r.id || `source-${Math.random().toString(36).substr(2, 9)}`,
@@ -219,7 +232,6 @@ export default function ChatInterface() {
             }));
             
             turnSources.push(...newSources);
-            
             setActiveSources(prev => {
               const existingIds = new Set(prev.map(s => s.id));
               return [...prev, ...newSources.filter(s => !existingIds.has(s.id))];
@@ -227,60 +239,48 @@ export default function ChatInterface() {
           }
         }
 
-        // Send tool results back to Gemini
-        const toolMessage = { role: 'function', parts: toolResponses };
-        const nextContents = [
-          ...currentContents,
-          message,
-          toolMessage
-        ];
+        // Add model's tool call and our response to history
+        currentContents.push(response.candidates[0].content);
+        currentContents.push({
+          role: 'user',
+          parts: toolResponses
+        });
         
         console.log('Sending tool results back to Gemini...');
-        const nextResponse = await generateResponse(nextContents);
+        setLoadingStatus('Synthesising results...');
+        response = await generateResponse(currentContents);
         
-        if (!nextResponse || !nextResponse.candidates || nextResponse.candidates.length === 0) {
+        if (checkCancellation()) return;
+
+        if (!response || !response.candidates || response.candidates.length === 0) {
           throw new Error("No response candidates received from Gemini API during tool loop.");
         }
-
-        // Update history for next iteration
-        currentContents = [
-          ...currentContents,
-          message,
-          toolMessage
-        ];
-        
-        response = nextResponse;
-        message = response.candidates[0].content;
-        console.log('Next model response after tool call:', message);
       }
 
-      console.log('Finalizing AI response...', { 
-        hasText: !!response.text, 
-        textLength: response.text?.length,
-        candidatesCount: response.candidates?.length 
-      });
-      
-      const aiContent = response.text || (response.candidates?.[0]?.content?.parts?.[0]?.text) || "I'm sorry, I couldn't generate a response.";
+      const finalContent = response.text || "I couldn't generate a response. Please try again.";
+      console.log('Final AI response:', finalContent);
       
       const aiMessage: Message = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
-        content: aiContent,
-        sources: turnSources,
+        content: finalContent,
         timestamp: new Date(),
+        sources: turnSources.length > 0 ? Array.from(new Map(turnSources.map(s => [s.id, s])).values()) : undefined,
       };
 
-      console.log('Adding AI message to state');
-      setMessages(prev => [...prev, aiMessage]);
+      if (checkCancellation()) return;
+
+      setMessages(prev => [...(Array.isArray(prev) ? prev : []), aiMessage]);
       
-      // Update history for next user message - include all intermediate steps
+      // Update history for next user message
       chatHistoryRef.current = [
         ...currentContents,
-        { role: 'model', parts: message.parts || [] }
+        response.candidates[0].content
       ];
       console.log('Chat history updated, turns:', chatHistoryRef.current.length);
 
     } catch (error: any) {
+      if (checkCancellation()) return;
       console.error("Chat Error Detail:", {
         message: error?.message,
         response: error?.response?.data,
@@ -735,7 +735,9 @@ export default function ChatInterface() {
                     <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
                     <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
                   </div>
-                  <span className="text-xs text-muted-foreground italic">KAI is synthesising information...</span>
+                  <span className="text-xs text-muted-foreground italic">
+                    {loadingStatus || "KAI is synthesising information..."}
+                  </span>
                 </div>
               </motion.div>
             )}
@@ -833,6 +835,7 @@ export default function ChatInterface() {
                       onClick={(e) => {
                         e.stopPropagation();
                         console.log('Force stopping KAI');
+                        currentTurnRef.current++; // Increment to cancel current turn
                         setIsLoading(false);
                       }}
                       title="Force stop"
