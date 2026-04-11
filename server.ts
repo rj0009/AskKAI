@@ -30,8 +30,8 @@ async function startServer() {
     const token = (config?.jiraToken || process.env.JIRA_API_TOKEN || "").trim();
     
     // Check for placeholder tokens
-    if (!baseUrl || !token || token.includes("MY_") || token.includes("TODO_")) {
-      return res.status(400).json({ error: "Jira not configured. Please check your settings." });
+    if (!baseUrl || !token || token.includes("MY_") || token.includes("TODO_") || baseUrl.includes("0.0.0.1")) {
+      return res.status(400).json({ error: "Jira not configured correctly. Please check your settings and ensure the Base URL is valid." });
     }
 
     try {
@@ -41,12 +41,17 @@ async function startServer() {
         headers: { 
           Authorization: `Basic ${auth}`,
           Accept: "application/json"
-        }
+        },
+        timeout: 10000 // 10s timeout
       });
       res.json(response.data.issues || []);
     } catch (error: any) {
       const status = error.response?.status || 500;
-      const data = error.response?.data || { message: error.message };
+      let message = error.message;
+      if (error.code === 'ECONNABORTED') message = "Connection timed out. Please check if the Jira URL is accessible.";
+      if (error.code === 'ENOTFOUND') message = "Jira host not found. Please check the Base URL.";
+      
+      const data = error.response?.data || { message };
       if (status !== 401 && status !== 403) {
         console.error(`Jira Proxy Error (${status}):`, data);
       }
@@ -59,8 +64,8 @@ async function startServer() {
     const baseUrl = normalizeUrl(config?.gitlabBaseUrl || process.env.GITLAB_BASE_URL || "https://gitlab.com");
     const token = (config?.gitlabToken || process.env.GITLAB_ACCESS_TOKEN || "").trim();
 
-    if (!token || token.includes("MY_") || token.includes("TODO_")) {
-      return res.status(400).json({ error: "GitLab not configured. Please check your settings." });
+    if (!token || token.includes("MY_") || token.includes("TODO_") || baseUrl.includes("0.0.0.1")) {
+      return res.status(400).json({ error: "GitLab not configured correctly. Please check your settings." });
     }
 
     try {
@@ -70,12 +75,17 @@ async function startServer() {
 
       const response = await axios.get(`${baseUrl}${endpoint}`, {
         params: searchParams,
-        headers: { "PRIVATE-TOKEN": token }
+        headers: { "PRIVATE-TOKEN": token },
+        timeout: 10000
       });
       res.json(response.data || []);
     } catch (error: any) {
       const status = error.response?.status || 500;
-      const data = error.response?.data || { message: error.message };
+      let message = error.message;
+      if (error.code === 'ECONNABORTED') message = "Connection timed out. Please check if the GitLab URL is accessible.";
+      if (error.code === 'ENOTFOUND') message = "GitLab host not found. Please check the Base URL.";
+
+      const data = error.response?.data || { message };
       if (status !== 401 && status !== 403) {
         console.error(`GitLab Proxy Error (${status}):`, data);
       }
@@ -89,8 +99,8 @@ async function startServer() {
     const email = (config?.confluenceEmail || process.env.CONFLUENCE_EMAIL || "").trim();
     const token = (config?.confluenceToken || process.env.CONFLUENCE_API_TOKEN || "").trim();
 
-    if (!baseUrl || !token || token.includes("MY_") || token.includes("TODO_")) {
-      return res.status(400).json({ error: "Confluence not configured. Please check your settings." });
+    if (!baseUrl || !token || token.includes("MY_") || token.includes("TODO_") || baseUrl.includes("0.0.0.1")) {
+      return res.status(400).json({ error: "Confluence not configured correctly. Please check your settings and ensure the Base URL is valid." });
     }
 
     try {
@@ -100,12 +110,17 @@ async function startServer() {
         headers: { 
           Authorization: `Basic ${auth}`,
           Accept: "application/json"
-        }
+        },
+        timeout: 10000
       });
       res.json(response.data.results || []);
     } catch (error: any) {
       const status = error.response?.status || 500;
-      const data = error.response?.data || { message: error.message };
+      let message = error.message;
+      if (error.code === 'ECONNABORTED') message = "Connection timed out. Please check if the Confluence URL is accessible.";
+      if (error.code === 'ENOTFOUND') message = "Confluence host not found. Please check the Base URL.";
+
+      const data = error.response?.data || { message };
       if (status !== 401 && status !== 403) {
         console.error(`Confluence Proxy Error (${status}):`, data);
       }

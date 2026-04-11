@@ -35,7 +35,9 @@ export default function ChatInterface() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [testingConnection, setTestingConnection] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, 'success' | 'error' | null>>({});
+  const [connectionErrors, setConnectionErrors] = useState<Record<string, string | null>>({});
   const [loadingStatus, setLoadingStatus] = useState<string>('');
+  const VERSION = "1.0.5";
   const [config, setConfig] = useState({
     jiraBaseUrl: '',
     jiraEmail: '',
@@ -69,6 +71,7 @@ export default function ChatInterface() {
   const testConnection = async (system: string) => {
     setTestingConnection(system);
     setTestResults(prev => ({ ...prev, [system]: null }));
+    setConnectionErrors(prev => ({ ...prev, [system]: null }));
     
     try {
       let endpoint = '';
@@ -82,11 +85,17 @@ export default function ChatInterface() {
         setTestResults(prev => ({ ...prev, [system]: 'success' }));
       } else if (system === 'sharepoint') {
         // SharePoint doesn't have a proxy yet, simulate success if token exists
-        setTestResults(prev => ({ ...prev, [system]: config.sharepointToken ? 'success' : 'error' }));
+        if (config.sharepointToken) {
+          setTestResults(prev => ({ ...prev, [system]: 'success' }));
+        } else {
+          throw new Error("SharePoint token is missing.");
+        }
       }
     } catch (err: any) {
-      console.error(`Connection test failed for ${system}:`, err.response?.data || err.message);
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message;
+      console.error(`Connection test failed for ${system}:`, errorMsg);
       setTestResults(prev => ({ ...prev, [system]: 'error' }));
+      setConnectionErrors(prev => ({ ...prev, [system]: errorMsg }));
     } finally {
       setTestingConnection(null);
     }
@@ -308,18 +317,18 @@ export default function ChatInterface() {
   };
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen bg-surface text-on-surface overflow-hidden font-sans">
       {/* Sidebar */}
-      <aside className="w-64 border-r bg-muted/30 flex flex-col hidden md:flex">
-        <div className="p-4 flex items-center gap-2 border-bottom">
-          <div className="bg-primary text-primary-foreground p-1.5 rounded-lg">
-            <Bot size={20} />
+      <aside className="w-64 bg-surface-container-low flex flex-col hidden md:flex">
+        <div className="p-3 flex items-center gap-2">
+          <div className="ethereal-gradient text-white p-1.5 rounded-lg shadow-sm">
+            <Bot size={18} />
           </div>
-          <h1 className="font-bold text-lg tracking-tight">AskKAI</h1>
+          <h1 className="font-heading font-extrabold text-lg tracking-tight text-primary">AskKAI</h1>
         </div>
         
         <div className="p-4 space-y-4">
-          <Button variant="outline" className="w-full justify-start gap-2 border-dashed" onClick={() => {
+          <Button variant="ghost" className="w-full justify-start gap-2 ethereal-gradient text-white shadow-md rounded-full text-[11px] font-heading font-extrabold uppercase tracking-widest hover:opacity-90" onClick={() => {
             setMessages([messages[0]]);
             setActiveSources([]);
             setActivePersona(null);
@@ -329,16 +338,19 @@ export default function ChatInterface() {
           </Button>
 
           <div className="space-y-1">
-            <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1">Select Persona</h2>
-            <div className="grid grid-cols-1 gap-1">
+            <h2 className="text-[9px] font-heading font-extrabold text-on-surface-variant/40 uppercase tracking-widest px-3 mb-2">Select Persona</h2>
+            <div className="grid grid-cols-1 gap-1 px-2">
               {personas.map(p => (
                 <Button 
                   key={p.id} 
-                  variant={activePersona === p.id ? "secondary" : "ghost"} 
-                  className="w-full justify-start text-xs h-8 px-2"
+                  variant="ghost" 
+                  className={cn(
+                    "w-full justify-start text-[11px] font-bold h-9 px-3 rounded-xl transition-all",
+                    activePersona === p.id ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:bg-surface/50"
+                  )}
                   onClick={() => setActivePersona(p.id as any)}
                 >
-                  <span className="mr-2 opacity-70">{p.icon}</span>
+                  <span className={cn("mr-2 transition-colors", activePersona === p.id ? "text-primary" : "opacity-40")}>{p.icon}</span>
                   {p.name}
                 </Button>
               ))}
@@ -382,44 +394,44 @@ export default function ChatInterface() {
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t space-y-4">
-          <div className="space-y-2">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2">System Pulse</h4>
+        <div className="p-4 space-y-4">
+          <div className="space-y-3">
+            <h4 className="text-[9px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40 px-3">System Pulse</h4>
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl hover:bg-surface/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.jiraToken && testResults.jira !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
-                  <span className="text-[10px] font-medium">Jira Cloud</span>
+                  <div className={cn("w-2 h-2 rounded-full", config.jiraToken && testResults.jira !== 'error' ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-on-surface-variant/20")} />
+                  <span className="text-[10px] font-bold text-on-surface-variant">Jira Cloud</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.jiraToken && testResults.jira !== 'error' ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] font-medium text-on-surface-variant/40">{config.jiraToken && testResults.jira !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
-              <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl hover:bg-surface/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.confluenceToken && testResults.confluence !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
-                  <span className="text-[10px] font-medium">Confluence</span>
+                  <div className={cn("w-2 h-2 rounded-full", config.confluenceToken && testResults.confluence !== 'error' ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-on-surface-variant/20")} />
+                  <span className="text-[10px] font-bold text-on-surface-variant">Confluence</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.confluenceToken && testResults.confluence !== 'error' ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] font-medium text-on-surface-variant/40">{config.confluenceToken && testResults.confluence !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
-              <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl hover:bg-surface/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.sharepointToken && testResults.sharepoint !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
-                  <span className="text-[10px] font-medium">SharePoint</span>
+                  <div className={cn("w-2 h-2 rounded-full", config.sharepointToken && testResults.sharepoint !== 'error' ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-on-surface-variant/20")} />
+                  <span className="text-[10px] font-bold text-on-surface-variant">SharePoint</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.sharepointToken && testResults.sharepoint !== 'error' ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] font-medium text-on-surface-variant/40">{config.sharepointToken && testResults.sharepoint !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
-              <div className="flex items-center justify-between px-2 py-1 rounded hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-xl hover:bg-surface/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", config.gitlabToken && testResults.gitlab !== 'error' ? "bg-green-500 animate-pulse" : "bg-muted")} />
-                  <span className="text-[10px] font-medium">GitLab</span>
+                  <div className={cn("w-2 h-2 rounded-full", config.gitlabToken && testResults.gitlab !== 'error' ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-on-surface-variant/20")} />
+                  <span className="text-[10px] font-bold text-on-surface-variant">GitLab</span>
                 </div>
-                <span className="text-[9px] text-muted-foreground">{config.gitlabToken && testResults.gitlab !== 'error' ? "Syncing" : "Mocking"}</span>
+                <span className="text-[9px] font-medium text-on-surface-variant/40">{config.gitlabToken && testResults.gitlab !== 'error' ? "Syncing" : "Mocking"}</span>
               </div>
             </div>
           </div>
 
           <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
             <DialogTrigger render={
-              <Button variant="outline" className="w-full justify-start gap-2 text-sm font-bold">
+              <Button variant="ghost" className="w-full justify-start gap-2 text-[11px] font-heading font-extrabold uppercase tracking-widest bg-surface-container-high rounded-xl hover:bg-primary/5 text-on-surface-variant">
                 <Settings size={16} className="text-primary" />
                 Configuration
               </Button>
@@ -475,6 +487,11 @@ export default function ChatInterface() {
                       >
                         {testingConnection === 'jira' ? "Testing..." : "Test Connection"}
                       </Button>
+                      {connectionErrors.jira && (
+                        <p className="text-[10px] text-red-500 bg-red-50 p-2 rounded border border-red-100">
+                          {connectionErrors.jira}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -523,6 +540,11 @@ export default function ChatInterface() {
                       >
                         {testingConnection === 'confluence' ? "Testing..." : "Test Connection"}
                       </Button>
+                      {connectionErrors.confluence && (
+                        <p className="text-[10px] text-red-500 bg-red-50 p-2 rounded border border-red-100">
+                          {connectionErrors.confluence}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -564,6 +586,11 @@ export default function ChatInterface() {
                       >
                         {testingConnection === 'gitlab' ? "Testing..." : "Test Connection"}
                       </Button>
+                      {connectionErrors.gitlab && (
+                        <p className="text-[10px] text-red-500 bg-red-50 p-2 rounded border border-red-100">
+                          {connectionErrors.gitlab}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -624,31 +651,27 @@ export default function ChatInterface() {
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col relative min-w-0">
         {/* Header */}
-        <header className="h-14 border-b flex items-center justify-between px-6 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-          <div className="flex items-center gap-4">
-            <div className="md:hidden bg-primary text-primary-foreground p-1 rounded-md">
-              <Bot size={18} />
+        <header className="h-12 glass-morphism flex items-center justify-between px-6 sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <div className="md:hidden ethereal-gradient text-white p-1.5 rounded-md">
+              <Bot size={16} />
             </div>
-            <div>
-              <h2 className="text-sm font-semibold">Delivery Intelligence</h2>
-              <p className="text-[10px] text-muted-foreground">NCSS IT / Transformation Office</p>
-            </div>
+            <h2 className="text-xs font-heading font-extrabold uppercase tracking-widest text-on-surface-variant">Delivery Intelligence</h2>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[10px] font-medium">v1.0.0-pilot</Badge>
-            <Button variant="ghost" size="sm" className="gap-2 text-xs" onClick={() => setIsSettingsOpen(true)}>
+            <Badge variant="secondary" className="text-[9px] font-medium h-5 bg-surface-container-highest text-on-surface">v{VERSION}-pilot</Badge>
+            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/5 text-on-surface-variant" onClick={() => setIsSettingsOpen(true)} title="Configuration">
               <Settings size={14} />
-              Config
             </Button>
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <Info size={18} />
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-primary/5 text-on-surface-variant">
+              <Info size={14} />
             </Button>
           </div>
         </header>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 p-6 min-h-0">
-          <div className="max-w-3xl mx-auto space-y-8">
+        <ScrollArea className="flex-1 px-4 py-2 min-h-0">
+          <div className="max-w-3xl mx-auto space-y-4">
             <AnimatePresence initial={false}>
               {messages.map((msg) => (
                 <motion.div
@@ -660,11 +683,11 @@ export default function ChatInterface() {
                     msg.role === 'user' ? "flex-row-reverse" : "flex-row"
                   )}
                 >
-                  <Avatar className={cn("h-8 w-8 border", msg.role === 'user' ? "bg-primary" : "bg-muted")}>
+                  <Avatar className={cn("h-8 w-8", msg.role === 'user' ? "ethereal-gradient" : "bg-surface-container-highest")}>
                     {msg.role === 'assistant' ? (
-                      <AvatarFallback className="bg-primary text-primary-foreground"><Bot size={16} /></AvatarFallback>
+                      <AvatarFallback className="bg-transparent text-primary"><Bot size={16} /></AvatarFallback>
                     ) : (
-                      <AvatarFallback className="bg-muted text-muted-foreground"><User size={16} /></AvatarFallback>
+                      <AvatarFallback className="bg-transparent text-white"><User size={16} /></AvatarFallback>
                     )}
                   </Avatar>
                   <div className={cn(
@@ -672,12 +695,15 @@ export default function ChatInterface() {
                     msg.role === 'user' ? "items-end" : "items-start"
                   )}>
                     <div className={cn(
-                      "px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm",
+                      "rounded-2xl text-sm leading-relaxed",
                       msg.role === 'user' 
-                        ? "bg-primary text-primary-foreground rounded-tr-none" 
-                        : "bg-card border rounded-tl-none"
+                        ? "ethereal-gradient text-white rounded-tr-none px-5 py-3.5 shadow-md" 
+                        : "bg-surface-container-lowest rounded-tl-none p-6 ambient-shadow"
                     )}>
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <div className={cn(
+                        "prose max-w-none",
+                        msg.role === 'user' ? "prose-invert text-white" : "prose-base text-on-surface"
+                      )}>
                         <ReactMarkdown>
                           {msg.content}
                         </ReactMarkdown>
@@ -720,6 +746,53 @@ export default function ChatInterface() {
                 </motion.div>
               ))}
             </AnimatePresence>
+
+            {/* Initial Suggestions - Only show when conversation just started */}
+            {messages.length === 1 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6 pt-8"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="p-4 bg-surface-container-lowest border-none ambient-shadow hover:scale-[1.02] cursor-pointer transition-all duration-300" onClick={() => handleSend("Validate release for v2.3.1 deployment based on release notes, completed tickets and merged code.")}>
+                    <div className="flex items-center gap-2 mb-2 text-primary">
+                      <ShieldAlert size={16} />
+                      <span className="text-[10px] font-heading font-extrabold uppercase tracking-widest">Release Validation</span>
+                    </div>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">Cross-reference Jira, GitLab, and Confluence for release readiness.</p>
+                  </Card>
+                  <Card className="p-4 bg-surface-container-lowest border-none ambient-shadow hover:scale-[1.02] cursor-pointer transition-all duration-300" onClick={() => handleSend("What are the critical security findings in the repository and what should we address first?")}>
+                    <div className="flex items-center gap-2 mb-2 text-secondary">
+                      <ShieldCheck size={16} />
+                      <span className="text-[10px] font-heading font-extrabold uppercase tracking-widest">Security Audit</span>
+                    </div>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">Synthesize GitLab security scans with Jira vulnerability tracking.</p>
+                  </Card>
+                  <Card className="p-4 bg-surface-container-lowest border-none ambient-shadow hover:scale-[1.02] cursor-pointer transition-all duration-300" onClick={() => handleSend("What is the current design specification for the notification feature? Flag if documentation is outdated.")}>
+                    <div className="flex items-center gap-2 mb-2 text-primary-container">
+                      <FileText size={16} />
+                      <span className="text-[10px] font-heading font-extrabold uppercase tracking-widest">Doc Synthesis</span>
+                    </div>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">Locate and validate specifications across Confluence and SharePoint.</p>
+                  </Card>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {(activePersona ? personas.find(p => p.id === activePersona)?.queries : personas.flatMap(p => p.queries).slice(0, 3)).map((q, i) => (
+                    <Button 
+                      key={i} 
+                      type="button"
+                      variant="ghost" 
+                      className="h-8 text-[10px] rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary-fixed-dim hover:text-primary transition-all px-4"
+                      onClick={() => handleSend(q)}
+                    >
+                      {q}
+                    </Button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
             {isLoading && (
               <motion.div 
                 initial={{ opacity: 0 }}
@@ -746,70 +819,9 @@ export default function ChatInterface() {
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="p-6 bg-background border-t flex-none relative z-10">
-          <div className="max-w-3xl mx-auto space-y-4">
-            {/* Intelligence Actions */}
-            <div className="flex flex-wrap gap-2 justify-center mb-2">
-              <Button 
-                type="button"
-                variant="outline" 
-                size="sm" 
-                className="h-7 text-[10px] rounded-full bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/40 text-primary font-bold"
-                onClick={() => {
-                  console.log('Intelligence Action: Release Validation');
-                  handleSend("Validate release for v2.3.1 deployment based on release notes, completed tickets and merged code.");
-                }}
-              >
-                <ShieldAlert size={12} className="mr-1.5" />
-                Release Validation
-              </Button>
-              <Button 
-                type="button"
-                variant="outline" 
-                size="sm" 
-                className="h-7 text-[10px] rounded-full bg-red-500/5 border-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 text-red-700 font-bold"
-                onClick={() => {
-                  console.log('Intelligence Action: Security Audit');
-                  handleSend("What are the critical security findings in the repository and what should we address first?");
-                }}
-              >
-                <ShieldCheck size={12} className="mr-1.5" />
-                Security Audit
-              </Button>
-              <Button 
-                type="button"
-                variant="outline" 
-                size="sm" 
-                className="h-7 text-[10px] rounded-full bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10 hover:border-blue-500/40 text-blue-700 font-bold"
-                onClick={() => {
-                  console.log('Intelligence Action: Doc Synthesis');
-                  handleSend("What is the current design specification for the notification feature? Flag if documentation is outdated.");
-                }}
-              >
-                <FileText size={12} className="mr-1.5" />
-                Doc Synthesis
-              </Button>
-            </div>
-
-            {/* Suggestions */}
-            <div className="flex flex-wrap gap-2 justify-center">
-              {(activePersona ? personas.find(p => p.id === activePersona)?.queries : personas.flatMap(p => p.queries).slice(0, 3)).map((q, i) => (
-                <Button 
-                  key={i} 
-                  type="button"
-                  variant="outline" 
-                  className="h-7 text-[10px] rounded-full bg-muted/30 border-muted-foreground/10 hover:bg-primary/5 hover:border-primary/30 transition-all"
-                  onClick={() => {
-                    console.log('Canned Message Clicked:', q);
-                    handleSend(q);
-                  }}
-                >
-                  {q}
-                </Button>
-              ))}
-            </div>
-
-            <div className="relative flex gap-2 items-end">
+        <div className="px-6 py-4 glass-morphism flex-none relative z-10">
+          <div className="max-w-3xl mx-auto">
+            <div className="relative flex gap-3 items-center">
               <div className="relative flex-1">
                 <input
                   value={input}
@@ -825,13 +837,13 @@ export default function ChatInterface() {
                     }
                   }}
                   placeholder={activePersona ? `Ask as ${personas.find(p => p.id === activePersona)?.name || 'Partner'}...` : "Ask KAI about products, delivery, or operations..."}
-                  className="w-full pr-12 h-12 bg-muted/20 border border-muted-foreground/20 focus:border-primary focus:ring-1 focus:ring-primary outline-none rounded-xl px-4 transition-all text-sm"
+                  className="w-full pr-14 h-12 bg-surface/50 backdrop-blur-sm ghost-border focus:border-primary/40 focus:ring-4 focus:ring-primary/5 outline-none rounded-2xl px-5 transition-all text-sm ambient-shadow"
                 />
                 <div className="absolute right-1.5 top-1.5 flex gap-1 z-20">
                   {isLoading && (
                     <button 
                       type="button"
-                      className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive transition-colors"
+                      className="h-9 w-9 flex items-center justify-center rounded-xl text-on-surface-variant hover:text-secondary transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         console.log('Force stopping KAI');
@@ -840,59 +852,61 @@ export default function ChatInterface() {
                       }}
                       title="Force stop"
                     >
-                      <Zap size={18} />
+                      <Zap size={16} />
                     </button>
                   )}
                   <button 
                     type="button"
                     className={cn(
-                      "h-9 w-9 flex items-center justify-center rounded-lg transition-all",
-                      (!input.trim() || isLoading) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-primary text-primary-foreground hover:opacity-90 active:scale-95"
+                      "h-9 w-9 flex items-center justify-center rounded-xl transition-all shadow-sm",
+                      input.trim() ? "ethereal-gradient text-white shadow-primary/20" : "bg-surface-container-highest text-on-surface-variant opacity-50"
                     )}
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log('Send button clicked manually');
                       handleSend();
                     }}
+                    disabled={!input.trim() || isLoading}
                   >
-                    <Send size={18} />
+                    <Send size={16} className={cn(input.trim() ? "translate-x-0.5" : "")} />
                   </button>
                 </div>
               </div>
             </div>
-            <div className="flex justify-center">
-              <Button 
-                variant="ghost" 
-                size="xs" 
-                className="text-[10px] text-muted-foreground hover:text-primary"
-                onClick={handleReset}
-              >
-                <History size={12} className="mr-1" />
-                Reset Conversation
-              </Button>
+            <div className="mt-2 flex items-center justify-between px-2">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={handleReset}
+                  className="text-[10px] font-heading font-bold uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1.5"
+                >
+                  <Plus size={12} />
+                  Reset Session
+                </button>
+                <span className="text-[10px] text-on-surface-variant/40">|</span>
+                <span className="text-[10px] text-on-surface-variant/60 font-medium">AI can make mistakes. Verify critical info.</span>
+              </div>
+              <div className="text-[9px] font-heading font-bold text-on-surface-variant/40 uppercase tracking-tighter">
+                AskKAI v{VERSION} • Oracle Engine
+              </div>
             </div>
-            <p className="text-[10px] text-center text-muted-foreground mt-3 opacity-60">
-              AskKAI inherits your system permissions. Responses cite sources for auditability.
-            </p>
           </div>
         </div>
       </main>
 
       {/* Right Panel - Context/Sources */}
-      <aside className="w-80 border-l bg-muted/10 flex flex-col hidden xl:flex">
-        <header className="p-4 border-b">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Search size={16} className="text-primary" />
+      <aside className="w-80 bg-surface-container-low flex flex-col hidden xl:flex">
+        <header className="p-4">
+          <h3 className="text-xs font-heading font-extrabold uppercase tracking-widest flex items-center gap-2 text-primary">
+            <Search size={14} />
             Intelligence Context
           </h3>
         </header>
         
         <Tabs defaultValue="sources" className="flex-1 flex flex-col">
-          <div className="px-4 pt-2">
-            <TabsList className="w-full grid grid-cols-3">
-              <TabsTrigger value="sources" className="text-xs">Sources</TabsTrigger>
-              <TabsTrigger value="details" className="text-xs">Synthesis</TabsTrigger>
-              <TabsTrigger value="health" className="text-xs">Health</TabsTrigger>
+          <div className="px-4">
+            <TabsList className="w-full grid grid-cols-3 h-9 bg-surface-container-high p-1 rounded-xl">
+              <TabsTrigger value="sources" className="text-[10px] font-bold uppercase tracking-tighter data-[state=active]:bg-surface data-[state=active]:text-primary rounded-lg transition-all">Sources</TabsTrigger>
+              <TabsTrigger value="details" className="text-[10px] font-bold uppercase tracking-tighter data-[state=active]:bg-surface data-[state=active]:text-primary rounded-lg transition-all">Synthesis</TabsTrigger>
+              <TabsTrigger value="health" className="text-[10px] font-bold uppercase tracking-tighter data-[state=active]:bg-surface data-[state=active]:text-primary rounded-lg transition-all">Health</TabsTrigger>
             </TabsList>
           </div>
 
@@ -901,29 +915,29 @@ export default function ChatInterface() {
               {activeSources.length > 0 ? (
                 <div className="space-y-4">
                   {activeSources.map((source) => (
-                    <Card key={source.id} className="overflow-hidden border-muted-foreground/10 hover:border-primary/30 transition-colors group">
-                      <CardHeader className="p-3 pb-0">
-                        <div className="flex items-center justify-between mb-1">
+                    <Card key={source.id} className="overflow-hidden border-none bg-surface-container-lowest ambient-shadow hover:scale-[1.01] transition-all duration-300 group">
+                      <CardHeader className="p-4 pb-0">
+                        <div className="flex items-center justify-between mb-2">
                           <Badge variant="outline" className={cn(
-                            "text-[9px] px-1.5 py-0 h-4 font-bold uppercase",
-                            source.type === 'Jira' && "text-blue-500 border-blue-500/20 bg-blue-500/5",
-                            source.type === 'Confluence' && "text-blue-600 border-blue-600/20 bg-blue-600/5",
-                            source.type === 'GitLab' && "text-orange-500 border-orange-500/20 bg-orange-500/5",
-                            source.type === 'SharePoint' && "text-teal-600 border-teal-600/20 bg-teal-600/5",
+                            "text-[8px] px-1.5 py-0 h-4 font-heading font-extrabold uppercase tracking-widest border-none",
+                            source.type === 'Jira' && "text-blue-600 bg-blue-500/10",
+                            source.type === 'Confluence' && "text-blue-700 bg-blue-600/10",
+                            source.type === 'GitLab' && "text-orange-600 bg-orange-500/10",
+                            source.type === 'SharePoint' && "text-teal-700 bg-teal-600/10",
                           )}>
                             {source.type} {source.isMock && "(Mock)"}
                           </Badge>
-                          <span className="text-[9px] text-muted-foreground">{source.lastUpdated}</span>
+                          <span className="text-[9px] font-bold text-on-surface-variant/40">{source.lastUpdated}</span>
                         </div>
-                        <CardTitle className="text-xs leading-tight group-hover:text-primary transition-colors">
+                        <CardTitle className="text-xs font-heading font-bold leading-tight group-hover:text-primary transition-colors">
                           {source.title}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="p-3">
-                        <p className="text-[11px] text-muted-foreground line-clamp-3 mb-2 leading-relaxed">
+                      <CardContent className="p-4">
+                        <p className="text-[11px] text-on-surface-variant/70 line-clamp-3 mb-3 leading-relaxed">
                           {source.content}
                         </p>
-                        <Button variant="ghost" size="sm" className="w-full h-7 text-[10px] gap-1.5 justify-center border border-transparent hover:border-muted-foreground/20" onClick={() => window.open(source.url, '_blank')}>
+                        <Button variant="ghost" size="sm" className="w-full h-8 text-[10px] font-bold uppercase tracking-widest gap-2 justify-center bg-surface-container-low hover:bg-primary/5 hover:text-primary transition-all rounded-lg" onClick={() => window.open(source.url, '_blank')}>
                           View Original
                           <ExternalLink size={10} />
                         </Button>
@@ -948,25 +962,25 @@ export default function ChatInterface() {
           <TabsContent value="details" className="flex-1 overflow-hidden min-h-0 m-0">
             <ScrollArea className="h-full p-4">
               <div className="space-y-6">
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Confidence Score</h4>
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40">Confidence Score</h4>
                   <div className="flex items-center gap-3">
-                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden shadow-inner">
                       <motion.div 
                         initial={{ width: 0 }}
                         animate={{ width: activeSources.length > 0 ? '85%' : '0%' }}
-                        className="h-full bg-primary"
+                        className="h-full ethereal-gradient shadow-[0_0_12px_rgba(83,0,183,0.3)]"
                       />
                     </div>
-                    <span className="text-xs font-bold">{activeSources.length > 0 ? '85%' : '0%'}</span>
+                    <span className="text-xs font-heading font-extrabold text-primary">{activeSources.length > 0 ? '85%' : '0%'}</span>
                   </div>
-                  <p className="text-[9px] text-muted-foreground italic">Based on source relevance and data freshness.</p>
+                  <p className="text-[9px] text-on-surface-variant/60 italic font-medium">Based on source relevance and data freshness.</p>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Partner Insight</h4>
-                  <div className="bg-primary/10 border border-primary/20 p-3 rounded-lg">
-                    <p className="text-[11px] leading-relaxed font-medium text-primary">
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40">Partner Insight</h4>
+                  <div className="bg-primary/5 p-4 rounded-2xl shadow-sm">
+                    <p className="text-[11px] leading-relaxed font-bold text-primary">
                       {activeSources.length > 0 
                         ? "KAI has detected potential inconsistencies between Jira blockers and GitLab pipeline status. Recommend immediate sync with Tech Lead."
                         : "Awaiting data retrieval to generate cross-system product insights."}
@@ -974,32 +988,30 @@ export default function ChatInterface() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Synthesis Engine</h4>
-                  <div className="bg-muted/30 rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between text-[10px]">
+                <div className="space-y-3">
+                  <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40">Synthesis Engine</h4>
+                  <div className="bg-surface-container-high rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-on-surface-variant">
                       <span>Cross-System Mapping</span>
-                      <Badge variant="outline" className="text-[8px] h-3.5 bg-green-500/10 text-green-600 border-green-600/20">Active</Badge>
+                      <Badge variant="outline" className="text-[8px] h-4 bg-green-500/10 text-green-600 border-none font-extrabold uppercase tracking-widest">Active</Badge>
                     </div>
-                    <div className="flex items-center justify-between text-[10px]">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-on-surface-variant">
                       <span>Permission Inheritance</span>
-                      <Badge variant="outline" className="text-[8px] h-3.5 bg-green-500/10 text-green-600 border-green-600/20">Verified</Badge>
+                      <Badge variant="outline" className="text-[8px] h-4 bg-green-500/10 text-green-600 border-none font-extrabold uppercase tracking-widest">Verified</Badge>
                     </div>
-                    <div className="flex items-center justify-between text-[10px]">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-on-surface-variant">
                       <span>Auditability Log</span>
-                      <Badge variant="outline" className="text-[8px] h-3.5 bg-green-500/10 text-green-600 border-green-600/20">Enabled</Badge>
+                      <Badge variant="outline" className="text-[8px] h-4 bg-green-500/10 text-green-600 border-none font-extrabold uppercase tracking-widest">Enabled</Badge>
                     </div>
                   </div>
                 </div>
 
-                <Separator />
-
-                <div className="bg-primary/5 border border-primary/10 p-3 rounded-lg space-y-2">
+                <div className="bg-surface-container-high p-4 rounded-2xl space-y-3">
                   <div className="flex items-center gap-2 text-primary">
                     <ShieldCheck size={14} />
-                    <h4 className="text-[11px] font-bold uppercase tracking-wider">Access Control</h4>
+                    <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest">Access Control</h4>
                   </div>
-                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  <p className="text-[10px] leading-relaxed text-on-surface-variant/70 font-medium">
                     AskKAI inherits your permissions from NCSS Identity Provider. You are only seeing information you have authorized access to in Jira, Confluence, and GitLab.
                   </p>
                 </div>
@@ -1008,63 +1020,63 @@ export default function ChatInterface() {
           </TabsContent>
           <TabsContent value="health" className="flex-1 overflow-hidden min-h-0 m-0">
             <ScrollArea className="h-full p-4">
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Delivery Health Radar</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-green-500/5 border border-green-500/10 p-2 rounded-md text-center">
-                      <p className="text-[9px] text-muted-foreground uppercase font-bold">Velocity</p>
-                      <p className="text-lg font-bold text-green-600">High</p>
+              <div className="space-y-8">
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40">Delivery Health Radar</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-surface-container-lowest p-4 rounded-2xl text-center ambient-shadow">
+                      <p className="text-[9px] text-on-surface-variant/40 uppercase font-heading font-extrabold tracking-widest mb-1">Velocity</p>
+                      <p className="text-xl font-heading font-extrabold text-green-600">High</p>
                     </div>
-                    <div className="bg-yellow-500/5 border border-yellow-500/10 p-2 rounded-md text-center">
-                      <p className="text-[9px] text-muted-foreground uppercase font-bold">Risk Level</p>
-                      <p className="text-lg font-bold text-yellow-600">Med</p>
+                    <div className="bg-surface-container-lowest p-4 rounded-2xl text-center ambient-shadow">
+                      <p className="text-[9px] text-on-surface-variant/40 uppercase font-heading font-extrabold tracking-widest mb-1">Risk Level</p>
+                      <p className="text-xl font-heading font-extrabold text-secondary">Med</p>
                     </div>
-                    <div className="bg-blue-500/5 border border-blue-500/10 p-2 rounded-md text-center">
-                      <p className="text-[9px] text-muted-foreground uppercase font-bold">Quality</p>
-                      <p className="text-lg font-bold text-blue-600">92%</p>
+                    <div className="bg-surface-container-lowest p-4 rounded-2xl text-center ambient-shadow">
+                      <p className="text-[9px] text-on-surface-variant/40 uppercase font-heading font-extrabold tracking-widest mb-1">Quality</p>
+                      <p className="text-xl font-heading font-extrabold text-primary">92%</p>
                     </div>
-                    <div className="bg-orange-500/5 border border-orange-500/10 p-2 rounded-md text-center">
-                      <p className="text-[9px] text-muted-foreground uppercase font-bold">Blockers</p>
-                      <p className="text-lg font-bold text-orange-600">2</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active Blockers</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2 p-2 bg-muted/30 rounded-md border-l-2 border-orange-500">
-                      <AlertCircle size={12} className="text-orange-500 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-bold">MSF IDP Integration Delay</p>
-                        <p className="text-[9px] text-muted-foreground">Blocked by external dependency. Resolution: EOW.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2 p-2 bg-muted/30 rounded-md border-l-2 border-red-500">
-                      <AlertCircle size={12} className="text-red-500 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-bold">Security Vulnerabilities</p>
-                        <p className="text-[9px] text-muted-foreground">3 Critical issues in epes-backend pipeline.</p>
-                      </div>
+                    <div className="bg-surface-container-lowest p-4 rounded-2xl text-center ambient-shadow">
+                      <p className="text-[9px] text-on-surface-variant/40 uppercase font-heading font-extrabold tracking-widest mb-1">Blockers</p>
+                      <p className="text-xl font-heading font-extrabold text-secondary">2</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Compliance Check</h4>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="flex items-center gap-1"><CheckCircle2 size={10} className="text-green-500" /> ITG Standards</span>
-                      <span className="text-green-600 font-bold">Pass</span>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40">Active Blockers</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3 p-4 bg-surface-container-lowest rounded-2xl ambient-shadow">
+                      <AlertCircle size={14} className="text-secondary mt-0.5" />
+                      <div>
+                        <p className="text-[11px] font-heading font-extrabold text-on-surface">MSF IDP Integration Delay</p>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium leading-relaxed">Blocked by external dependency. Resolution: EOW.</p>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="flex items-center gap-1"><CheckCircle2 size={10} className="text-green-500" /> Data Privacy</span>
-                      <span className="text-green-600 font-bold">Pass</span>
+                    <div className="flex items-start gap-3 p-4 bg-surface-container-lowest rounded-2xl ambient-shadow">
+                      <AlertCircle size={14} className="text-secondary mt-0.5" />
+                      <div>
+                        <p className="text-[11px] font-heading font-extrabold text-on-surface">Security Vulnerabilities</p>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium leading-relaxed">3 Critical issues in epes-backend pipeline.</p>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="flex items-center gap-1"><AlertCircle size={10} className="text-yellow-500" /> Security Scan</span>
-                      <span className="text-yellow-600 font-bold">Warning</span>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-heading font-extrabold uppercase tracking-widest text-on-surface-variant/40">Compliance Check</h4>
+                  <div className="space-y-2 bg-surface-container-high p-4 rounded-2xl">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="flex items-center gap-2 text-on-surface-variant"><CheckCircle2 size={12} className="text-green-500" /> ITG Standards</span>
+                      <span className="text-green-600 uppercase tracking-widest text-[9px]">Pass</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="flex items-center gap-2 text-on-surface-variant"><CheckCircle2 size={12} className="text-green-500" /> Data Privacy</span>
+                      <span className="text-green-600 uppercase tracking-widest text-[9px]">Pass</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="flex items-center gap-2 text-on-surface-variant"><AlertCircle size={12} className="text-secondary" /> Security Scan</span>
+                      <span className="text-secondary uppercase tracking-widest text-[9px]">Warning</span>
                     </div>
                   </div>
                 </div>
