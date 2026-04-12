@@ -36,26 +36,48 @@ async function startServer() {
 
     try {
       const auth = Buffer.from(`${email}:${token}`).toString("base64");
+      
+      // If query is empty, we just want to test connection or get recent items
+      // Using a simpler JQL for empty queries
+      const jql = query 
+        ? `text ~ "${query.replace(/"/g, '\\"')}"` 
+        : "order by created DESC";
+
+      console.log(`Jira Proxy: Requesting ${baseUrl}/rest/api/3/search with JQL: ${jql}`);
+
       const response = await axios.get(`${baseUrl}/rest/api/3/search`, {
-        params: { jql: query ? `text ~ "${query}"` : "order by created DESC" },
+        params: { 
+          jql,
+          maxResults: 10
+        },
         headers: { 
           Authorization: `Basic ${auth}`,
-          Accept: "application/json"
+          Accept: "application/json",
+          "X-Atlassian-Token": "no-check",
+          "User-Agent": "AskKAI-Proxy"
         },
-        timeout: 10000 // 10s timeout
+        timeout: 15000 // 15s timeout
       });
       res.json(response.data.issues || []);
     } catch (error: any) {
       const status = error.response?.status || 500;
+      const errorData = error.response?.data;
       let message = error.message;
+      
       if (error.code === 'ECONNABORTED') message = "Connection timed out. Please check if the Jira URL is accessible.";
       if (error.code === 'ENOTFOUND') message = "Jira host not found. Please check the Base URL.";
       
-      const data = error.response?.data || { message };
-      if (status !== 401 && status !== 403) {
-        console.error(`Jira Proxy Error (${status}):`, data);
-      }
-      res.status(status).json(data);
+      console.error(`Jira Proxy Error (${status}):`, {
+        message,
+        url: error.config?.url,
+        data: JSON.stringify(errorData)
+      });
+
+      res.status(status).json({ 
+        error: message, 
+        details: errorData,
+        status 
+      });
     }
   });
 
@@ -95,7 +117,7 @@ async function startServer() {
 
   app.post("/api/proxy/confluence", async (req, res) => {
     const { query, config } = req.body;
-    const baseUrl = normalizeUrl(config?.confluenceBaseUrl || process.env.CONFLUENCE_BASE_URL || "");
+    let baseUrl = normalizeUrl(config?.confluenceBaseUrl || process.env.CONFLUENCE_BASE_URL || "");
     const email = (config?.confluenceEmail || process.env.CONFLUENCE_EMAIL || "").trim();
     const token = (config?.confluenceToken || process.env.CONFLUENCE_API_TOKEN || "").trim();
 
@@ -103,28 +125,54 @@ async function startServer() {
       return res.status(400).json({ error: "Confluence not configured correctly. Please check your settings and ensure the Base URL is valid." });
     }
 
+    // Auto-append /wiki for Atlassian Cloud if missing
+    if (baseUrl.includes("atlassian.net") && !baseUrl.includes("/wiki")) {
+      baseUrl = `${baseUrl}/wiki`;
+    }
+
     try {
       const auth = Buffer.from(`${email}:${token}`).toString("base64");
-      const response = await axios.get(`${baseUrl}/rest/api/content/search`, {
-        params: { cql: query ? `text ~ "${query}"` : "order by created DESC" },
+      
+      // Use the v2 search endpoint for better compatibility
+      const endpoint = `${baseUrl}/api/v2/search-content`;
+      const params = query 
+        ? { cql: `text ~ "${query.replace(/"/g, '\\"')}"`, limit: 10 }
+        : { cql: "type = page order by created DESC", limit: 10 };
+
+      console.log(`Confluence Proxy: Requesting ${endpoint} with params: ${JSON.stringify(params)}`);
+
+      const response = await axios.get(endpoint, {
+        params,
         headers: { 
           Authorization: `Basic ${auth}`,
-          Accept: "application/json"
+          Accept: "application/json",
+          "X-Atlassian-Token": "no-check",
+          "User-Agent": "AskKAI-Proxy"
         },
-        timeout: 10000
+        timeout: 15000
       });
+      
+      // V2 search returns results in 'results' array
       res.json(response.data.results || []);
     } catch (error: any) {
       const status = error.response?.status || 500;
+      const errorData = error.response?.data;
       let message = error.message;
+      
       if (error.code === 'ECONNABORTED') message = "Connection timed out. Please check if the Confluence URL is accessible.";
       if (error.code === 'ENOTFOUND') message = "Confluence host not found. Please check the Base URL.";
 
-      const data = error.response?.data || { message };
-      if (status !== 401 && status !== 403) {
-        console.error(`Confluence Proxy Error (${status}):`, data);
-      }
-      res.status(status).json(data);
+      console.error(`Confluence Proxy Error (${status}):`, {
+        message,
+        url: error.config?.url,
+        data: JSON.stringify(errorData)
+      });
+
+      res.status(status).json({ 
+        error: message, 
+        details: errorData,
+        status 
+      });
     }
   });
 

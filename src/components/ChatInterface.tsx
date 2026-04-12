@@ -197,18 +197,27 @@ export default function ChatInterface() {
             const axiosConfig = { timeout: 15000 };
             const systemName = name.replace('search', '').toLowerCase();
             const hasFailedBefore = (testResults as any)[systemName] === 'error';
+            
+            // Check if system is configured with a real token (not empty or placeholder)
+            const isConfigured = (
+              (name === 'searchJira' && config.jiraToken && !config.jiraToken.includes('TODO') && !config.jiraToken.includes('MY_')) ||
+              (name === 'searchGitLab' && config.gitlabToken && !config.gitlabToken.includes('TODO') && !config.gitlabToken.includes('MY_')) ||
+              (name === 'searchConfluence' && config.confluenceToken && !config.confluenceToken.includes('TODO') && !config.confluenceToken.includes('MY_'))
+            );
 
-            if (name === 'searchJira' && !hasFailedBefore) {
-              const res = await axios.post('/api/proxy/jira', { query: args.query, config }, axiosConfig);
-              result = res.data;
-            } else if (name === 'searchGitLab' && !hasFailedBefore) {
-              const res = await axios.post('/api/proxy/gitlab', { query: args.query, config }, axiosConfig);
-              result = res.data;
-            } else if (name === 'searchConfluence' && !hasFailedBefore) {
-              const res = await axios.post('/api/proxy/confluence', { query: args.query, config }, axiosConfig);
-              result = res.data;
+            if (isConfigured && !hasFailedBefore) {
+              if (name === 'searchJira') {
+                const res = await axios.post('/api/proxy/jira', { query: args.query, config }, axiosConfig);
+                result = res.data;
+              } else if (name === 'searchGitLab') {
+                const res = await axios.post('/api/proxy/gitlab', { query: args.query, config }, axiosConfig);
+                result = res.data;
+              } else if (name === 'searchConfluence') {
+                const res = await axios.post('/api/proxy/confluence', { query: args.query, config }, axiosConfig);
+                result = res.data;
+              }
             } else {
-              console.log(`Using mock data for tool: ${name}`);
+              console.log(`Using mock data for tool: ${name} (Configured: ${isConfigured}, FailedBefore: ${hasFailedBefore})`);
               result = searchSources(args.query).map(s => ({ ...s, isMock: true }));
             }
           } catch (err) {
@@ -651,26 +660,35 @@ export default function ChatInterface() {
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col relative min-w-0">
         {/* Header */}
-        <header className="h-12 glass-morphism flex items-center justify-between px-6 sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <div className="md:hidden ethereal-gradient text-white p-1.5 rounded-md">
-              <Bot size={16} />
+        <header className="h-14 glass-morphism flex items-center justify-between px-8 sticky top-0 z-20 ghost-border border-t-0 border-x-0">
+          <div className="flex items-center gap-4">
+            <div className="md:hidden ethereal-gradient text-white p-2 rounded-xl shadow-sm">
+              <Bot size={18} />
             </div>
-            <h2 className="text-xs font-heading font-extrabold uppercase tracking-widest text-on-surface-variant">Delivery Intelligence</h2>
+            <div className="flex flex-col">
+              <h2 className="text-[10px] font-heading font-extrabold uppercase tracking-[0.2em] text-primary/60 leading-none mb-1">Oracle Intelligence</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-heading font-bold text-on-surface">Delivery Stream</span>
+                <Badge variant="secondary" className="text-[8px] font-bold h-3.5 px-1 bg-primary/5 text-primary border-none uppercase tracking-tighter">Live</Badge>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[9px] font-medium h-5 bg-surface-container-highest text-on-surface">v{VERSION}-pilot</Badge>
-            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/5 text-on-surface-variant" onClick={() => setIsSettingsOpen(true)} title="Configuration">
-              <Settings size={14} />
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 mr-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+              <span className="text-[9px] font-heading font-bold uppercase tracking-widest text-on-surface-variant/40">Systems Synced</span>
+            </div>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-primary/5 text-on-surface-variant transition-all" onClick={() => setIsSettingsOpen(true)}>
+              <Settings size={16} />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-primary/5 text-on-surface-variant">
-              <Info size={14} />
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-primary/5 text-on-surface-variant transition-all">
+              <Info size={16} />
             </Button>
           </div>
         </header>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 px-4 py-2 min-h-0">
+        <ScrollArea className="flex-1 px-6 py-8 min-h-0">
           <div className="max-w-3xl mx-auto space-y-4">
             <AnimatePresence initial={false}>
               {messages.map((msg) => (
@@ -799,17 +817,17 @@ export default function ChatInterface() {
                 animate={{ opacity: 1 }}
                 className="flex gap-4"
               >
-                <Avatar className="h-8 w-8 border bg-muted">
-                  <AvatarFallback className="bg-primary text-primary-foreground"><Bot size={16} /></AvatarFallback>
+                <Avatar className="h-8 w-8 bg-surface-container-highest">
+                  <AvatarFallback className="bg-transparent text-primary"><Bot size={16} /></AvatarFallback>
                 </Avatar>
-                <div className="bg-card border px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
-                    <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
-                    <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
+                <div className="bg-surface-container-lowest px-6 py-4 rounded-2xl rounded-tl-none ambient-shadow flex items-center gap-3">
+                  <div className="flex gap-1.5">
+                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5 }} className="w-1.5 h-1.5 ethereal-gradient rounded-full" />
+                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.3 }} className="w-1.5 h-1.5 ethereal-gradient rounded-full" />
+                    <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.6 }} className="w-1.5 h-1.5 ethereal-gradient rounded-full" />
                   </div>
-                  <span className="text-xs text-muted-foreground italic">
-                    {loadingStatus || "KAI is synthesising information..."}
+                  <span className="text-xs text-on-surface-variant font-medium italic">
+                    {loadingStatus || "Oracle is synthesising information..."}
                   </span>
                 </div>
               </motion.div>
