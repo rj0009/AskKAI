@@ -95,7 +95,7 @@ export const generateResponse = async (contents: any[]) => {
     
     INSTRUCTIONS:
     1. PROACTIVE INCONSISTENCY DETECTION: If Jira says a feature is "Done" but GitLab shows no recent commits or failing pipelines, HIGHLIGHT this as a risk.
-    2. NCSS CONTEXT: You understand NCSS ITG standards, MSF IDP integration patterns, and the "EPES" project context.
+    2. NCSS CONTEXT: You understand NCSS ITG standards, MSF IDP integration patterns, and the "DMS" (Donor Management System) project context.
     3. STRUCTURE YOUR RESPONSE into these specific sections:
        - **Facts**: Direct information found in the sources.
        - **Intelligence Synthesis**: Connect the dots. (e.g., "The Confluence design for X is being implemented in GitLab repo Y, but Jira shows no corresponding tasks.")

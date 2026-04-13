@@ -372,7 +372,7 @@ export default function ChatInterface() {
             <div>
               <h2 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-2">Recent Sessions</h2>
               <div className="space-y-1">
-                {['EPES Architecture', 'Project X Risks', 'GitLab CI/CD Setup'].map((title, i) => (
+                {['DMS Architecture', 'Project X Risks', 'GitLab CI/CD Setup'].map((title, i) => (
                   <Button key={i} variant="ghost" className="w-full justify-start text-sm font-normal h-9 px-2">
                     <History size={14} className="mr-2 opacity-50" />
                     <span className="truncate">{title}</span>
